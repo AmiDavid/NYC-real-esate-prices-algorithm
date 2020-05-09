@@ -190,7 +190,24 @@ prices %>%
 
 
 ### tidying the data
-
+prices$`SALE PRICE` <- as.numeric(prices$`SALE PRICE`)
+prices$`BUILDING CLASS AT TIME OF SALE` <- as.factor(prices$`BUILDING CLASS AT TIME OF SALE`)
+prices$`TAX CLASS AT TIME OF SALE` <- as.factor(prices$`TAX CLASS AT TIME OF SALE`)
+prices$`YEAR BUILT` <- as.numeric(prices$`YEAR BUILT`)
+prices$`GROSS SQUARE FEET`<- as.numeric(prices$`GROSS SQUARE FEET`)
+prices$`LAND SQUARE FEET` <- as.numeric(prices$`LAND SQUARE FEET`)
+prices$`TOTAL UNITS` <- as.numeric(prices$`TOTAL UNITS`)
+prices$`COMMERCIAL UNITS` <- as.numeric(prices$`COMMERCIAL UNITS`)
+prices$`RESIDENTIAL UNITS` <- as.numeric(prices$`RESIDENTIAL UNITS`)
+prices$`ZIP CODE` <- as.numeric(prices$`ZIP CODE`)
+prices$`APARTMENT NUMBER`<- as.factor(prices$`APARTMENT NUMBER`)
+prices$LOT <- as.numeric(prices$LOT)
+prices$BOROUGH <- as.factor(prices$BOROUGH)
+prices$`BUILDING CLASS CATEGORY` <- as.factor(prices$`BUILDING CLASS CATEGORY`)
+prices$`TAX CLASS AT PRESENT` <- as.factor(prices$`TAX CLASS AT PRESENT`)
+prices$BLOCK <- as.numeric(prices$BLOCK)
+prices$`BUILDING CLASS AT PRESENT` <- as.factor(prices$`BUILDING CLASS AT PRESENT`)
+prices$ADDRESS <- as.factor(prices$ADDRESS)
 prices$`SALE DATE` <- as_datetime(prices$`SALE DATE`)
 prices$`SALE DATE` <- round_date(prices$`SALE DATE`, unit = "week",
                          week_start = getOption("lubridate.week.start", 7))
@@ -252,8 +269,6 @@ prices_set <- prices[-validation_index,]
 test_index <- createDataPartition(y = prices_set$BOROUGH, times = 1, p = 0.1, list = FALSE)
 test_set <- prices_set[test_index,]
 train_set <- prices_set[-test_index,]
-train_set <- corr_simple(train_set)
-test_set <- corr_simple(test_set)
 
 
 ###RMSE function
@@ -291,13 +306,11 @@ predicted_price <- test_set %>%
 
 
 ### The first model is trying to predict based only on columns with no na's
-train_set_numeric <- corr_simple(train_set)
-test_set_numeric <- corr_simple(test_set)
 
 glm_train <- train(`SALE PRICE` ~ ., method = "glm",
-                               data = train_set_numeric, na.action = na.omit)
+                               data = train_set, na.action = na.omit)
 
-y_hat_glm <- predict(glm_train, test_set_numeric, type = "raw")
+y_hat_glm <- predict(glm_train, test_set, type = "raw")
 
 RMSE(test_set_numeric$`SALE PRICE`, y_hat_glm)
 
