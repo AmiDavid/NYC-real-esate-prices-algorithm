@@ -13,9 +13,10 @@ if(!require(tinytex)) install.packages("tinytex", repos = "http://cran.us.r-proj
 if(!require(readr)) install.packages("readr", repos = "http://cran.us.r-project.org")
 if(!require(reshape2)) install.packages("reshape2", repos = "http://cran.us.r-project.org")
 if(!require(ggcorrplot)) install.packages("ggcorplot", repos = "http://cran.us.r-project.org")
+if(!require(ranger)) install.packages("ranger", repos = "http://cran.us.r-project.org")
 
 
-options(digits = 4)
+options(digits = 4, scipen = 999)
 
 
 ### NYC property sales
@@ -43,6 +44,15 @@ prices %>%
 prices <- prices %>% 
   dplyr::filter(prices$`SALE PRICE` > 1000)
 
+
+
+### we can see the log(prices distribution)
+prices %>% ggplot(aes(log(as.numeric(`SALE PRICE`)))) +
+  geom_histogram(bins = 25, fill = "blue", color = "black")
+
+
+
+
 #### checking the building class category
 
 prices %>% 
@@ -65,14 +75,14 @@ prices %>%
 ### the tax class 
 prices %>% 
   group_by(prices$`TAX CLASS AT TIME OF SALE`) %>% 
-    summarize(mean_sale_price = mean(as.numeric(`SALE PRICE`) / 1000), n = n())
-    
+  summarize(mean_sale_price = mean(as.numeric(`SALE PRICE`) / 1000), n = n())
+
 ### plotting the tax class
 prices %>% 
   group_by(prices$`TAX CLASS AT TIME OF SALE`) %>% 
   ggplot(aes(`TAX CLASS AT TIME OF SALE`, fill = `TAX CLASS AT TIME OF SALE`)) + 
   geom_bar(color = "black")
-  
+
 
 ### showing building class and price
 prices %>% 
@@ -120,7 +130,7 @@ prices %>%
   filter(prices$`YEAR BUILT` > 0) %>% 
   ggplot(aes(as.numeric(`YEAR BUILT`))) +
   geom_bar() + 
-  xlim(1800, max(as.numeric(prices$`YEAR BUILT`)))+
+  xlim(1825, max(as.numeric(prices$`YEAR BUILT`)))+
   xlab("Year Built")
 
 
@@ -174,7 +184,8 @@ prices %>%
                                                ifelse(BOROUGH == 5, "Staten Island", 0)))))) %>% 
   group_by(prices$BOROUGH) %>% 
   ggplot(aes(BOROUGH, fill = as.factor(`BOROUGH`))) +
-  geom_bar(color = "black")
+  geom_bar(color = "black") +
+  ylab("Number of sales")
 
 
 ### some weeks have more deals than others
@@ -190,31 +201,59 @@ prices %>%
 
 
 ### tidying the data
-prices$`SALE PRICE` <- as.numeric(prices$`SALE PRICE`)
-prices$`BUILDING CLASS AT TIME OF SALE` <- as.factor(prices$`BUILDING CLASS AT TIME OF SALE`)
-prices$`TAX CLASS AT TIME OF SALE` <- as.factor(prices$`TAX CLASS AT TIME OF SALE`)
-prices$`YEAR BUILT` <- as.numeric(prices$`YEAR BUILT`)
-prices$`GROSS SQUARE FEET`<- as.numeric(prices$`GROSS SQUARE FEET`)
-prices$`LAND SQUARE FEET` <- as.numeric(prices$`LAND SQUARE FEET`)
-prices$`TOTAL UNITS` <- as.numeric(prices$`TOTAL UNITS`)
-prices$`COMMERCIAL UNITS` <- as.numeric(prices$`COMMERCIAL UNITS`)
-prices$`RESIDENTIAL UNITS` <- as.numeric(prices$`RESIDENTIAL UNITS`)
-prices$`ZIP CODE` <- as.numeric(prices$`ZIP CODE`)
-prices$`APARTMENT NUMBER`<- as.factor(prices$`APARTMENT NUMBER`)
-prices$LOT <- as.numeric(prices$LOT)
-prices$BOROUGH <- as.factor(prices$BOROUGH)
-prices$`BUILDING CLASS CATEGORY` <- as.factor(prices$`BUILDING CLASS CATEGORY`)
-prices$`TAX CLASS AT PRESENT` <- as.factor(prices$`TAX CLASS AT PRESENT`)
-prices$BLOCK <- as.numeric(prices$BLOCK)
-prices$`BUILDING CLASS AT PRESENT` <- as.factor(prices$`BUILDING CLASS AT PRESENT`)
-prices$ADDRESS <- as.factor(prices$ADDRESS)
-prices$`SALE DATE` <- as_datetime(prices$`SALE DATE`)
-prices$`SALE DATE` <- round_date(prices$`SALE DATE`, unit = "week",
-                         week_start = getOption("lubridate.week.start", 7))
+prices <- prices %>% 
+  mutate(neighborhood = as.factor(prices$NEIGHBORHOOD), building_class_at_time_of_sale = as.factor(prices$`BUILDING CLASS AT TIME OF SALE`),
+         tax_class_at_time_of_sale = as.factor(prices$`TAX CLASS AT TIME OF SALE`), year_built = as.numeric(prices$`YEAR BUILT`),
+         gross_sf = as.numeric(prices$`GROSS SQUARE FEET`), land_sf = as.numeric(prices$`LAND SQUARE FEET`),
+         total_units = as.numeric(prices$`TOTAL UNITS`), commercial_units = as.numeric(prices$`COMMERCIAL UNITS`),
+         residential_units = as.numeric(prices$`RESIDENTIAL UNITS`),
+         zip_code = as.numeric(prices$`ZIP CODE`), apartment_number = as.factor(prices$`APARTMENT NUMBER`),
+         lot = as.numeric(prices$LOT), borough = as.factor(prices$BOROUGH), building_class_category = as.factor(prices$`BUILDING CLASS CATEGORY`),
+         tax_class_at_present = as.factor(prices$`TAX CLASS AT PRESENT`), block = as.numeric(prices$BLOCK),
+         building_class_at_present = as.factor(prices$`BUILDING CLASS AT PRESENT`), address = as.factor(prices$ADDRESS),
+         sale_date = as_datetime(prices$`SALE DATE`), sale_date = round_date(prices$`SALE DATE`, unit = "week",
+                                                                             week_start = getOption("lubridate.week.start", 7)),
+         sale_price_in_thousands = as.numeric(`SALE PRICE`) / 1000,  
+         sale_price = as.numeric(prices$`SALE PRICE`)) %>% 
+  select(-`SALE PRICE`, -`BUILDING CLASS AT TIME OF SALE`, -`TAX CLASS AT TIME OF SALE`, -`YEAR BUILT`,
+         -`GROSS SQUARE FEET`, -`LAND SQUARE FEET`, -`TOTAL UNITS`, -`COMMERCIAL UNITS`, -`RESIDENTIAL UNITS`,
+         -`ZIP CODE`, -`APARTMENT NUMBER`, -LOT, -BOROUGH, -`BUILDING CLASS CATEGORY`,
+         -`TAX CLASS AT PRESENT`, -BLOCK, -`BUILDING CLASS AT PRESENT`, -ADDRESS, 
+         -`SALE DATE`, -NEIGHBORHOOD, -`EASE-MENT`, -X1)
+
+
+
+### Dividing the prices into categories of 10000$
+
+max(prices$sale_price)
+prices$sale_price_category <- 
+  as.factor(cut(prices$sale_price, breaks = c(seq(1000, 10000000, 50000), Inf), dig.lab = 50))
+
+prices %>% 
+  group_by(sale_price_category) %>% 
+  filter(!is.na(sale_price_category)) %>% 
+  summarize(n = n())
+
+
+
+### We see that the prices seem to follow a normal distribution
+price_category <- prices %>% 
+  group_by(sale_price_category) %>% 
+  filter(!is.na(sale_price_category)) %>% 
+  summarize(n = n())
+
+price_category
+
+prices %>% 
+  ggplot(aes((sale_price_category))) +
+  stat_count(width = 0.5) + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
 
 
 ### Creating a correlation matrix - by the explanations in http://www.sthda.com/english/wiki/ggplot2-quick-correlation-matrix-heatmap-r-software-and-data-visualization
 ### And https://towardsdatascience.com/how-to-create-a-correlation-matrix-with-too-many-variables-309cc0c0a57
+
 
 
 corr_simple <- function(data=prices,sig=0.5){
@@ -225,9 +264,7 @@ corr_simple <- function(data=prices,sig=0.5){
 }
 
 prices_numerical <- corr_simple(prices)
-prices_numerical$`SALE DATE` <- as.numeric(prices_numerical$`SALE DATE`)
-prices_numerical <- prices_numerical %>% 
-  select(-`EASE-MENT`, -`X1`)
+prices_numerical$sale_date <- as.numeric(prices_numerical$sale_date)
 
 
 cormat <- round(cor(prices_numerical, use = "na.or.complete"), 2)
@@ -246,27 +283,17 @@ reorder_cormat <- function(cormat){
 cormat <- reorder_cormat(cormat)
 cormat
 
-### We can see from the correlation matrix that the sale price is correlated mainly with gross sq. feet, altough there are a lot of na's to really learn something.
-### I'm gonna remove highly correlated variables
-prices_numerical <- prices_numerical %>% 
-  select(-BOROUGH, -`GROSS SQUARE FEET`, -`BUILDING CLASS AT PRESENT`, -`TAX CLASS AT PRESENT`)
-
 
 ### We see that some columns have some NA's
 colSums(is.na(prices))
 
-### removing Easement and apartemnt number
-prices <- prices %>% 
-  select(-`EASE-MENT`, -`APARTMENT NUMBER`)
-
-
 #### creating train set, test set and validation set
-validation_index <- createDataPartition(y = prices$BOROUGH, times = 1, p = 0.1, list = FALSE)
+validation_index <- createDataPartition(y = prices$borough, times = 1, p = 0.1, list = FALSE)
 validation_set <- prices[validation_index,]
 prices_set <- prices[-validation_index,]
 
 ### creating test set from the prices_set
-test_index <- createDataPartition(y = prices_set$BOROUGH, times = 1, p = 0.1, list = FALSE)
+test_index <- createDataPartition(y = prices$borough, times = 1, p = 0.1, list = FALSE)
 test_set <- prices_set[test_index,]
 train_set <- prices_set[-test_index,]
 
@@ -284,55 +311,20 @@ MAE <- function(real_sale_price, predicted_price){
   mean(abs(real_sale_price - predicted_price))
 }
 
+### filtering na columns
+train_set <- train_set %>%
+  filter(!is.na(sale_price_category) & gross_sf > 0 & land_sf > 0 & !is.na(tax_class_at_present) & !is.na(building_class_at_present)) %>% 
+  select(-apartment_number)
 
-#### Naive linear model - just the average
-mu_hat_average <- mean(train_set$`SALE PRICE`)
-tibble(mu_hat_average = mu_hat_average)
+test_set <- test_set %>%
+  filter(!is.na(sale_price_category) & gross_sf > 0 & land_sf > 0 & !is.na(tax_class_at_present) & !is.na(building_class_at_present)) %>% 
+  select(-apartment_number)
 
-### building and evaluation table
+### creating a random foresst using ranger
 
-evaluation_results <- tibble(method = "Simple average", RMSE = RMSE(test_set$`SALE PRICE`, mu_hat_average),
-                             MSE = MSE(test_set$`SALE PRICE`, mu_hat_average), 
-                             MAE = MAE(test_set$`SALE PRICE`, mu_hat_average))
+train_rf <- ranger(sale_price_category ~ ., data = train_set)
 
-evaluation_results
+predict_rf <- predict(train_rf, data = test_set)
+as.numeric(predict_rf$predictions)
 
-### adding gross square feet 
-gsf <- train_set %>% 
-  summarize(gsf = mean(train_set$`SALE PRICE` - mu_hat_average))
-
-predicted_price <- test_set %>% 
-  mutate(pred = mu_hat_average + gsf)
-
-
-### The first model is trying to predict based only on columns with no na's
-
-glm_train <- train(`SALE PRICE` ~ ., method = "glm",
-                               data = train_set, na.action = na.omit)
-
-y_hat_glm <- predict(glm_train, test_set, type = "raw")
-
-RMSE(test_set_numeric$`SALE PRICE`, y_hat_glm)
-
-
-### since it takes a very long time I have filtered the data to only staten Island
-
-manhattan_train <- train_set_numeric %>% 
-  filter(BOROUGH == 5) %>% 
-  select(`TAX CLASS AT TIME OF SALE`, BLOCK, `ZIP CODE`, LOT, `YEAR BUILT`, `BUILDING CLASS AT TIME OF SALE`, `SALE DATE`, `SALE PRICE`)
-manhattan_test <- test_set_numeric %>% 
-  filter(BOROUGH == 5) %>% 
-  select(`TAX CLASS AT TIME OF SALE`, BLOCK, `ZIP CODE`, LOT, `YEAR BUILT`, `BUILDING CLASS AT TIME OF SALE`, `SALE DATE`, `SALE PRICE`)
-
-first_model_manhattan <- train(`SALE PRICE` ~ ., method = "rf",
-                     data = manhattan_train)
-
-y_hat_manhattan_rf <- predict(first_model_manhattan, manhattan_test)
-
-RMSE(manhattan_test$`SALE PRICE`, y_hat_manhattan_rf)
-
-
-manhattan_test <- manhattan_test %>% 
-  mutate(predict = y_hat_manhattan_rf,
-         gap = (predict - `SALE PRICE`)^2)
-
+RMSE(as.numeric(test_set$sale_price_category), as.numeric(predict_rf$predictions))
