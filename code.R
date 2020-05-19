@@ -14,6 +14,7 @@ if(!require(readr)) install.packages("readr", repos = "http://cran.us.r-project.
 if(!require(reshape2)) install.packages("reshape2", repos = "http://cran.us.r-project.org")
 if(!require(ggcorrplot)) install.packages("ggcorplot", repos = "http://cran.us.r-project.org")
 if(!require(ranger)) install.packages("ranger", repos = "http://cran.us.r-project.org")
+tinytex::tlmgr_install("pdfcrop")
 
 
 options(digits = 4, scipen = 999)
@@ -33,6 +34,9 @@ prices <- read_csv(url("https://raw.githubusercontent.com/AmiDavid/NYC-real-esat
 
 head(prices)
 
+
+### the different variables
+colnames(prices)
 
 ### some houses are sold for 0, 1, 10 or NA.
 prices %>% 
@@ -280,17 +284,14 @@ reorder_cormat <- function(cormat){
 }
 
 # Reorder the correlation matrix
-cormat <- reorder_cormat(cormat)
-cormat
+cormat_tibble <- as.tibble(reorder_cormat(cormat))
+
+rownames(cormat_tibble) <- rownames(cormat)
 
 
 ### We see that some columns have some NA's
 colSums(is.na(prices))
 
-#### creating train set, test set and validation set
-validation_index <- createDataPartition(y = prices$borough, times = 1, p = 0.1, list = FALSE)
-validation_set <- prices[validation_index,]
-prices_set <- prices[-validation_index,]
 
 ### creating test set from the prices_set
 test_index <- createDataPartition(y = prices$borough, times = 1, p = 0.1, list = FALSE)
@@ -325,6 +326,29 @@ test_set <- test_set %>%
 train_rf <- ranger(sale_price_category ~ ., data = train_set)
 
 predict_rf <- predict(train_rf, data = test_set)
-as.numeric(predict_rf$predictions)
 
-RMSE(as.numeric(test_set$sale_price_category), as.numeric(predict_rf$predictions))
+evaluation_results <- tibble(method = "Random Forest using ranger libary on the test set", RMSE = RMSE(as.numeric(test_set$sale_price_category), as.numeric(predict_rf$predictions)),
+                                                                                 MSE = MSE(as.numeric(test_set$sale_price_category), as.numeric(predict_rf$predictions)),
+                                                                                 MAE = MAE(as.numeric(test_set$sale_price_category), as.numeric(predict_rf$predictions)))
+evaluation_results
+
+### percentage of correct categories predicted
+test_set$predicted_price_category <- predict_rf$predictions
+
+#### checking if the the predicted is equal to the real
+test_set <- test_set %>% 
+  mutate(correct = ifelse(predicted_price_category == sale_price_category, TRUE, FALSE))
+
+
+### percentage metric of succesful prediction
+
+perc_met <- test_set %>% 
+  group_by(correct) %>% 
+  summarize(n = n())
+  
+
+perc_metric <- (perc_met$n[2]) / (perc_met$n[1] + perc_met$n[2])
+
+evaluation_results <- cbind(evaluation_results, "Percentage of Correct Predictions on the test set" = perc_metric)
+
+evaluation_results
